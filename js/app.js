@@ -13,7 +13,8 @@ const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
 /* ---- application state ---- */
 const state = {
   rows: [],        // parsed visit rows
-  trips: [],       // computed { key, territoryId, username, email, date, stops[], legs[], totalKm }
+  trips: [],       // computed { key, territoryId, username, email, date, stops[], routePoints[], legs[], totalKm, incomplete }
+  userMeta: {},    // username -> { carNo, enginePower, economy, actualKm, actualFuel, home:{lon,lat}, office:{lon,lat} }
   routed: false,
 };
 
@@ -130,6 +131,104 @@ function parseWorkbook(data) {
   return rows;
 }
 
+/* ---------- telematics / vehicle data ---------- */
+
+/** Normalize a telematics header into a known field name */
+function normTelKey(h) {
+  const k = String(h).toLowerCase().replace(/[\s_\-]+/g, "");
+  const map = {
+    user: "username", username: "username", name: "username", driver: "username",
+    carno: "carNo", carnumber: "carNo", car: "carNo", vehicle: "carNo", vehicleno: "carNo", plate: "carNo", platenumber: "carNo",
+    enginepower: "enginePower", engine: "enginePower", power: "enginePower", hp: "enginePower", horsepower: "enginePower",
+    fueleconomy: "economy", economy: "economy", kmpl: "economy", kml: "economy", efficiency: "economy", mileage: "economy",
+    actualdistance: "actualKm", actualkm: "actualKm", telematicsdistance: "actualKm", distance: "actualKm", odometer: "actualKm", monthlydistance: "actualKm",
+    actualfuel: "actualFuel", fuel: "actualFuel", fuelconsumed: "actualFuel", monthlyfuel: "actualFuel", fuelconsumption: "actualFuel",
+    homelocation: "home", home: "home", homegps: "home", homecoordinates: "home", residence: "home",
+    officelocation: "office", office: "office", officegps: "office", officecoordinates: "office", branch: "office", depot: "office",
+  };
+  return map[k] || null;
+}
+
+function parseTelematics(data) {
+  const wb = XLSX.read(data, { type: "array", cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+  if (!raw.length) throw new Error("No rows found in the telematics sheet.");
+
+  const sample = raw[0];
+  const colMap = {};
+  Object.keys(sample).forEach((h) => {
+    const f = normTelKey(h);
+    if (f) colMap[h] = f;
+  });
+  const haveFields = new Set(Object.values(colMap));
+  if (!haveFields.has("username")) {
+    throw new Error("Telematics file needs a `user` column. Found: " + Object.keys(sample).join(", "));
+  }
+
+  const meta = {};
+  let count = 0;
+  raw.forEach((r) => {
+    const o = {};
+    Object.keys(colMap).forEach((h) => (o[colMap[h]] = r[h]));
+    const username = String(o.username ?? "").trim();
+    if (!username) return;
+    const home = parseLocation(o.home);
+    const office = parseLocation(o.office);
+    const num = (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
+    meta[username] = {
+      carNo: String(o.carNo ?? "").trim(),
+      enginePower: o.enginePower != null && String(o.enginePower).trim() !== "" ? String(o.enginePower).trim() : "",
+      economy: num(o.economy),
+      actualKm: num(o.actualKm),
+      actualFuel: num(o.actualFuel),
+      home, office,
+    };
+    count++;
+  });
+  if (!count) throw new Error("No usable telematics rows (need at least a `user`).");
+  return meta;
+}
+
+function handleTelematicsFile(file) {
+  overlay(true, "Reading " + file.name + "…");
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const meta = parseTelematics(new Uint8Array(e.target.result));
+      onTelematicsLoaded(meta, file.name);
+    } catch (err) {
+      console.error(err);
+      toast(err.message, "bad");
+    } finally {
+      overlay(false);
+    }
+  };
+  reader.onerror = () => { overlay(false); toast("Could not read telematics file.", "bad"); };
+  reader.readAsArrayBuffer(file);
+}
+
+function onTelematicsLoaded(meta, sourceName) {
+  state.userMeta = meta;
+  // push the actuals/economy into the fuel-check inputs
+  Object.entries(meta).forEach(([u, m]) => {
+    const f = (fuelInputs[u] ||= {});
+    f.carNo = m.carNo;
+    f.enginePower = m.enginePower;
+    if (m.economy != null) f.economy = m.economy;
+    if (m.actualKm != null) f.actualKm = m.actualKm;
+    if (m.actualFuel != null) f.actualFuel = m.actualFuel;
+  });
+  renderTelematicsSummary(sourceName);
+  renderFuelTable();
+  // home/office change distances, so any prior routing is stale — recompute if we have visits
+  if (state.rows.length) {
+    calculateAll();
+  } else {
+    toast("Telematics loaded for " + Object.keys(meta).length + " user(s). Import visits next.", "ok");
+  }
+}
+
 /* ---------- file handling ---------- */
 function handleFile(file) {
   overlay(true, "Reading " + file.name + "…");
@@ -160,6 +259,8 @@ function onDataLoaded(rows, sourceName) {
   renderFuelTable();
   $("#btnCalc").disabled = false;
   toast("Loaded " + rows.length + " rows.", "ok");
+  // if telematics (home/office) is already loaded, route immediately
+  if (Object.keys(state.userMeta).length) calculateAll();
 }
 
 /* ---------- dropzone wiring ---------- */
@@ -170,6 +271,14 @@ $("#fileInput").addEventListener("change", (e) => e.target.files[0] && handleFil
 ["dragleave", "drop"].forEach((ev) =>
   dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
 dz.addEventListener("drop", (e) => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
+
+const dzTel = $("#dropZoneTel");
+$("#fileInputTel").addEventListener("change", (e) => e.target.files[0] && handleTelematicsFile(e.target.files[0]));
+["dragover", "dragenter"].forEach((ev) =>
+  dzTel.addEventListener(ev, (e) => { e.preventDefault(); dzTel.classList.add("drag"); }));
+["dragleave", "drop"].forEach((ev) =>
+  dzTel.addEventListener(ev, (e) => { e.preventDefault(); dzTel.classList.remove("drag"); }));
+dzTel.addEventListener("drop", (e) => e.dataTransfer.files[0] && handleTelematicsFile(e.dataTransfer.files[0]));
 
 /* ==========================================================================
    2. TRIP GROUPING & DISTANCE
@@ -200,6 +309,20 @@ function buildTrips() {
   });
   trips.sort((a, b) => (a.territoryId + a.date).localeCompare(b.territoryId + b.date));
   state.trips = trips;
+}
+
+/**
+ * Build the ordered list of points OSRM should route through for a trip:
+ *   home → office → visit stops (in order) → office → home
+ * Requires the user's home & office from telematics; returns null otherwise
+ * (those trips are flagged incomplete and not routed).
+ */
+function buildRoutePoints(trip) {
+  const m = state.userMeta[trip.username];
+  if (!m || !m.home || !m.office) return null;
+  const home = (label) => ({ lon: m.home.lon, lat: m.home.lat, outletName: label, anchor: true, kind: "home" });
+  const office = (label) => ({ lon: m.office.lon, lat: m.office.lat, outletName: label, anchor: true, kind: "office" });
+  return [home("Home"), office("Office"), ...trip.stops, office("Office (return)"), home("Home (return)")];
 }
 
 /* ---- OSRM with caching + limited concurrency ---- */
@@ -246,9 +369,23 @@ function haversine(a, b) {
 }
 
 async function calculateAll() {
+  // resolve each trip's full route (home → office → visits → office → home)
+  state.trips.forEach((t) => {
+    t.routePoints = buildRoutePoints(t);
+    t.incomplete = !t.routePoints;
+  });
+
   // count legs for progress
-  const legCount = state.trips.reduce((s, t) => s + Math.max(0, t.stops.length - 1), 0);
-  if (!legCount) { toast("No multi-stop days to route.", "warn"); return; }
+  const legCount = state.trips.reduce((s, t) => s + (t.routePoints ? t.routePoints.length - 1 : 0), 0);
+  if (!legCount) {
+    state.routed = false;
+    renderDayTable();
+    renderFuelTable();
+    toast(Object.keys(state.userMeta).length
+      ? "No visits match a user with home & office set."
+      : "Import telematics (home & office per user) to calculate routes.", "warn");
+    return;
+  }
 
   $("#btnCalc").disabled = true;
   const prog = $("#calcProgress");
@@ -264,9 +401,11 @@ async function calculateAll() {
 
   for (const trip of state.trips) {
     trip.legs = [];
+    if (!trip.routePoints) { trip.totalKm = null; continue; }
+    const pts = trip.routePoints;
     let total = 0;
-    for (let i = 0; i < trip.stops.length - 1; i++) {
-      const a = trip.stops[i], b = trip.stops[i + 1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
       const r = await osrmRoute(a, b);
       if (r.fallback) usedFallback = true;
       trip.legs.push({ from: a, to: b, ...r });
@@ -316,6 +455,31 @@ function renderImportSummary(sourceName) {
   box.classList.remove("hidden");
 }
 
+function renderTelematicsSummary(sourceName) {
+  const box = $("#telSummary");
+  const meta = state.userMeta;
+  const users = Object.keys(meta);
+  const withLoc = users.filter((u) => meta[u].home && meta[u].office).length;
+  box.innerHTML = "";
+  const stats = [
+    ["Source", sourceName, true],
+    ["Users", users.length],
+    ["Home + office set", withLoc],
+  ];
+  stats.forEach(([k, v, isText]) => {
+    const s = el("div", "stat");
+    s.innerHTML = `<div class="n" style="${isText ? "font-size:14px;word-break:break-all" : ""}">${v}</div><div class="k">${k}</div>`;
+    box.appendChild(s);
+  });
+  if (withLoc < users.length) {
+    const warn = el("div", "stat");
+    warn.style.cssText = "border-color:#f0d28a;background:#fdf7e6";
+    warn.innerHTML = `<div class="n" style="font-size:14px;color:#8a6300">${users.length - withLoc}</div><div class="k">missing home/office</div>`;
+    box.appendChild(warn);
+  }
+  box.classList.remove("hidden");
+}
+
 function renderRawTable() {
   const t = $("#rawTable");
   const head = ["Visited day", "Territory", "User", "Outlet ID", "Outlet name", "Lon", "Lat"];
@@ -344,14 +508,16 @@ function renderDayTable() {
   const head = ["Territory", "Date", "User", "Stops", "Total distance (km)", ""];
   let html = "<thead><tr>" + head.map((h, i) => `<th class="${i >= 3 ? "num" : ""}">${h}</th>`).join("") + "</tr></thead><tbody>";
   state.trips.forEach((tr) => {
-    const total = tr.totalKm == null ? "—" : fmt(tr.totalKm);
+    let total;
+    if (state.routed && tr.incomplete) total = `<span class="badge warn">needs telematics</span>`;
+    else total = tr.totalKm == null ? "—" : fmt(tr.totalKm);
     html += `<tr>
       <td>${tr.territoryId}</td>
       <td>${tr.date}</td>
       <td>${tr.username}</td>
       <td class="num">${tr.stops.length}</td>
       <td class="num">${total}</td>
-      <td>${state.routed && tr.stops.length > 1 ? `<span class="row-link" data-trip="${tr.key}">view map →</span>` : ""}</td>
+      <td>${state.routed && tr.totalKm != null ? `<span class="row-link" data-trip="${tr.key}">view map →</span>` : ""}</td>
     </tr>`;
   });
   html += "</tbody>";
@@ -499,7 +665,7 @@ function ensureMap() {
 function populateMapSelect() {
   const sel = $("#mapTrip");
   sel.innerHTML = "";
-  const routable = state.trips.filter((t) => t.stops.length > 1 && t.totalKm != null);
+  const routable = state.trips.filter((t) => t.totalKm != null);
   if (!routable.length) {
     sel.innerHTML = `<option>No routable days</option>`;
     return;
@@ -542,7 +708,23 @@ function drawTrip(key) {
     allLatLng.push(...latlngs);
   });
 
-  // numbered stop markers
+  // home & office anchors (drawn once each, from telematics)
+  const meta = state.userMeta[trip.username];
+  const anchorMarker = (pt, emoji, label) => {
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="leaflet-marker-anchor">${emoji}</div>`,
+      iconSize: [30, 30], iconAnchor: [15, 15],
+    });
+    L.marker([pt.lat, pt.lon], { icon })
+      .bindPopup(`<b>${label}</b><br>${trip.username}`)
+      .addTo(routeLayer);
+    allLatLng.push([pt.lat, pt.lon]);
+  };
+  if (meta && meta.home) anchorMarker(meta.home, "🏠", "Home");
+  if (meta && meta.office) anchorMarker(meta.office, "🏢", "Office");
+
+  // numbered visit markers
   trip.stops.forEach((s, i) => {
     const icon = L.divIcon({
       className: "",
@@ -559,7 +741,8 @@ function drawTrip(key) {
 
   const fb = trip.legs.some((l) => l.fallback);
   $("#mapMeta").innerHTML =
-    `<b>${trip.territoryId}</b> · ${trip.date} · ${trip.username} — ${trip.stops.length} stops, ` +
+    `<b>${trip.territoryId}</b> · ${trip.date} · ${trip.username} — ${trip.stops.length} visits ` +
+    `<span class="muted">(🏠 home → 🏢 office → visits → office → home)</span>, ` +
     `<b>${fmt(trip.totalKm)} km</b>${fb ? ' · <span style="color:#8a6300">dashed = straight-line fallback</span>' : ""}`;
 }
 
@@ -586,20 +769,47 @@ const SAMPLE = [
 ];
 const SAMPLE_HEAD = ["visited_day", "outlet_id", "outlet_name", "location", "username", "email", "territory_id"];
 
+// telematics / vehicle data: one row per user
+const TELEMATICS_HEAD = [
+  "user", "car_no", "engine_power", "fuel_economy",
+  "actual_distance", "actual_fuel", "home_location", "office_location",
+];
+const TELEMATICS_SAMPLE = [
+  ["Aung", "YGN-1234", "110", "12", "540", "47", "[96.1200, 16.8000]", "[96.1450, 16.8100]"],
+  ["Su",   "MDY-5678", "95",  "11", "320", "31", "[96.0850, 21.9750]", "[96.0950, 21.9800]"],
+];
+
 function buildSampleSheet() {
   const aoa = [SAMPLE_HEAD, ...SAMPLE];
   return XLSX.utils.aoa_to_sheet(aoa);
+}
+
+function buildTelematicsArrayBuffer(rows) {
+  const ws = XLSX.utils.aoa_to_sheet([TELEMATICS_HEAD, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "telematics");
+  return XLSX.write(wb, { type: "array", bookType: "xlsx" });
 }
 
 $("#btnTemplate").addEventListener("click", () => {
   const ws = XLSX.utils.aoa_to_sheet([SAMPLE_HEAD, SAMPLE[0]]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "visits");
-  XLSX.writeFile(wb, "route_fuel_template.xlsx");
+  XLSX.writeFile(wb, "visits_template.xlsx");
+});
+
+$("#btnTelTemplate").addEventListener("click", () => {
+  const ws = XLSX.utils.aoa_to_sheet([TELEMATICS_HEAD, TELEMATICS_SAMPLE[0]]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "telematics");
+  XLSX.writeFile(wb, "telematics_template.xlsx");
 });
 
 $("#btnSample").addEventListener("click", () => {
   try {
+    const meta = parseTelematics(buildTelematicsArrayBuffer(TELEMATICS_SAMPLE));
+    // telematics first (no rows yet, so no routing), then visits auto-routes
+    onTelematicsLoaded(meta, "sample-telematics.xlsx");
     onDataLoaded(parseWorkbook(buildSampleArrayBuffer()), "sample-data.xlsx");
   } catch (err) {
     console.error(err);

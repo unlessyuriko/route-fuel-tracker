@@ -182,6 +182,11 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
   width: 26px; height: 26px; display: grid; place-items: center;
   font-size: 12px; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
+.leaflet-marker-anchor {
+  background: #fff; border-radius: 50%;
+  width: 30px; height: 30px; display: grid; place-items: center;
+  font-size: 16px; border: 2px solid var(--hk-green-dark); box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
 
 /* ---------- fuel table ---------- */
 .fuel-table input {

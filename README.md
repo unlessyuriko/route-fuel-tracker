@@ -11,16 +11,22 @@ visit plan implies — and did it burn the fuel that distance should consume?*
 
 ## Features
 
-1. **Import** — drag &amp; drop an `.xlsx` / `.xls` / `.csv`. Flexible header
-   matching, coordinate parsing from the `[lon, lat]` format, and Excel
-   date/time handling.
+1. **Import** — drag &amp; drop an `.xlsx` / `.xls` / `.csv` of **visits**, plus a
+   second **telematics / vehicle** file (one row per user) carrying car no.,
+   engine power, fuel economy, actual distance, actual fuel, and the user's
+   **home** &amp; **office** GPS. Flexible header matching, `[lon, lat]` coordinate
+   parsing, and Excel date/time handling.
 2. **Distance** — stops are ordered by `visited_day` timestamp, grouped per
-   `territory_id` per day. Each leg is the real driving distance from OSRM; the
-   daily total is the sum. Per-leg detail (distance + drive time) is shown too.
-3. **Route map** — Leaflet map drawing the actual OSRM road geometry with
-   numbered, time-stamped stop markers per day.
-4. **Fuel check** — per user, enter car number, engine power, fuel economy
-   (km/L), telematics distance and monthly fuel. The app computes:
+   `territory_id` per day. Each day's route runs **home → office → visits (in
+   order) → office → home**; each leg is the real driving distance from OSRM and
+   the daily total is the sum. Per-leg detail (distance + drive time) is shown
+   too. Users without home &amp; office in the telematics file are flagged *needs
+   telematics* and not routed.
+3. **Route map** — Leaflet map drawing the actual OSRM road geometry with the
+   🏠 home and 🏢 office anchors plus numbered, time-stamped visit markers.
+4. **Fuel check** — car number, engine power, fuel economy (km/L), telematics
+   distance and monthly fuel are **pre-filled from the telematics upload** (and
+   still editable). The app computes:
    - **Calculated distance** = Σ OSRM daily distances
    - **Calculated fuel** = calculated distance ÷ fuel economy
    - Distance Δ and fuel Δ (actual vs. calculated, absolute + %)
@@ -38,9 +44,22 @@ visit plan implies — and did it burn the fuel that distance should consume?*
 | `email` | `aung@demo.com` |
 | `territory_id` | `T-01` |
 
+### Telematics / vehicle columns (one row per user)
+
+| Column | Example |
+|---|---|
+| `user` | `Aung` |
+| `car_no` | `YGN-1234` |
+| `engine_power` | `110` |
+| `fuel_economy` | `12` (km/L) |
+| `actual_distance` | `540` (telematics km this month) |
+| `actual_fuel` | `47` (litres this month) |
+| `home_location` | `[96.1200, 16.8000]` (lon, lat) |
+| `office_location` | `[96.1450, 16.8100]` (lon, lat) |
+
 Header names are matched loosely (case/spacing/underscores ignored, plus common
-aliases). Use **⬇ Excel Template** in the header to download a starter file, or
-**Load Sample** to try the app instantly.
+aliases). Use **⬇ Visits Template** and **⛽ Telematics Template** in the header
+to download starter files, or **Load Sample** to try the app instantly.
 
 ## Running
 

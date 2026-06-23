@@ -20,7 +20,8 @@
       </div>
     </div>
     <div class="header-actions">
-      <button id="btnTemplate" class="btn btn-ghost" type="button">⬇ Excel Template</button>
+      <button id="btnTemplate" class="btn btn-ghost" type="button">⬇ Visits Template</button>
+      <button id="btnTelTemplate" class="btn btn-ghost" type="button">⛽ Telematics Template</button>
       <button id="btnSample" class="btn btn-ghost" type="button">Load Sample</button>
     </div>
   </header>
@@ -53,6 +54,27 @@
         </label>
 
         <div id="importSummary" class="import-summary hidden"></div>
+      </div>
+
+      <div class="card">
+        <h2>Import telematics &amp; vehicle data <span class="muted" style="font-weight:400">(needed for distance)</span></h2>
+        <p class="muted">
+          One row per <code>user</code>. Columns: <code>car_no</code>, <code>engine_power</code>,
+          <code>fuel_economy</code> (km/L), <code>actual_distance</code>, <code>actual_fuel</code>,
+          <code>home_location</code> &amp; <code>office_location</code> (each <code>[96.06, 16.86]</code> = lon, lat).
+          The daily route runs <strong>home → office → visits → office → home</strong>, so home &amp; office are required to compute a user's distance.
+        </p>
+
+        <label id="dropZoneTel" class="dropzone" for="fileInputTel">
+          <input type="file" id="fileInputTel" accept=".xlsx,.xls,.csv" hidden />
+          <div class="dz-inner">
+            <div class="dz-icon">⛽</div>
+            <strong>Drop your telematics file here</strong>
+            <span class="muted">or click to browse (.xlsx, .xls, .csv)</span>
+          </div>
+        </label>
+
+        <div id="telSummary" class="import-summary hidden"></div>
       </div>
 
       <div class="card hidden" id="rawCard">
