@@ -21,7 +21,11 @@ visit plan implies — and did it burn the fuel that distance should consume?*
    order) → office → home**; each leg is the real driving distance from OSRM and
    the daily total is the sum. Per-leg detail (distance + drive time) is shown
    too. Users without home &amp; office in the telematics file are flagged *needs
-   telematics* and not routed.
+   telematics* and not routed. Two route-shape options (re-route on toggle):
+   - **Return to office before going home** (on by default) — when off, the day
+     ends *visits → home* directly.
+   - **Visit office on Mondays only** — non-Monday days run *home → visits →
+     home*, skipping the office entirely.
 3. **Route map** — Leaflet map drawing the actual OSRM road geometry with the
    🏠 home and 🏢 office anchors plus numbered, time-stamped visit markers.
 4. **Fuel check** — car number, engine power, fuel economy (km/L), telematics

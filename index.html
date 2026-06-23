@@ -93,9 +93,13 @@
         </div>
         <p class="muted">
           Stops are ordered by <code>visited_day</code> timestamp, grouped per
-          <code>territory_id</code> per day. Each leg is the real road distance between
-          consecutive outlets from OSRM.
+          <code>territory_id</code> per day. Default daily route:
+          <strong>home → office → visits → office → home</strong>.
         </p>
+        <div class="route-opts">
+          <label><input type="checkbox" id="optReturnOffice" checked /> Return to office before going home</label>
+          <label><input type="checkbox" id="optOfficeMonday" /> Visit office on Mondays only</label>
+        </div>
         <div id="calcProgress" class="progress hidden"><div class="bar"></div><span class="label"></span></div>
         <div class="table-wrap">
           <table id="dayTable" class="data-table"></table>

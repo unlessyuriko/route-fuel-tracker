@@ -163,6 +163,17 @@ main { padding: 24px; max-width: 1180px; margin: 0 auto; }
 .badge.warn { background: #fdf1d6; color: #8a6300; }
 .badge.bad { background: #fbe1e1; color: #9c2020; }
 
+/* ---------- route options ---------- */
+.route-opts {
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  margin: 4px 0 6px;
+}
+.route-opts label {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.route-opts input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--hk-green); cursor: pointer; }
+
 /* ---------- progress ---------- */
 .progress { margin: 12px 0; }
 .progress .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; position: relative; }

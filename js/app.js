@@ -16,6 +16,7 @@ const state = {
   trips: [],       // computed { key, territoryId, username, email, date, stops[], routePoints[], legs[], totalKm, incomplete }
   userMeta: {},    // username -> { carNo, enginePower, economy, actualKm, actualFuel, home:{lon,lat}, office:{lon,lat} }
   routed: false,
+  routeOpts: { returnToOffice: true, officeMondayOnly: false },
 };
 
 /* ---------- small DOM helpers ---------- */
@@ -311,9 +312,19 @@ function buildTrips() {
   state.trips = trips;
 }
 
+/** Day of week for a "YYYY-MM-DD" trip date (0=Sun, 1=Mon), timezone-safe. */
+function tripDayOfWeek(dateStr) {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  return new Date(y, mo - 1, d).getDay();
+}
+
 /**
- * Build the ordered list of points OSRM should route through for a trip:
- *   home → office → visit stops (in order) → office → home
+ * Build the ordered list of points OSRM should route through for a trip.
+ * Default: home → office → visits (in order) → office → home.
+ * Options (state.routeOpts):
+ *   - returnToOffice=false → skip the office on the way back (visits → home directly)
+ *   - officeMondayOnly=true → only include the office on Mondays; other days
+ *     run home → visits → home.
  * Requires the user's home & office from telematics; returns null otherwise
  * (those trips are flagged incomplete and not routed).
  */
@@ -322,7 +333,30 @@ function buildRoutePoints(trip) {
   if (!m || !m.home || !m.office) return null;
   const home = (label) => ({ lon: m.home.lon, lat: m.home.lat, outletName: label, anchor: true, kind: "home" });
   const office = (label) => ({ lon: m.office.lon, lat: m.office.lat, outletName: label, anchor: true, kind: "office" });
-  return [home("Home"), office("Office"), ...trip.stops, office("Office (return)"), home("Home (return)")];
+
+  const opts = state.routeOpts;
+  const includeOffice = !opts.officeMondayOnly || tripDayOfWeek(trip.date) === 1;
+
+  const pts = [home("Home")];
+  if (includeOffice) pts.push(office("Office"));
+  pts.push(...trip.stops);
+  if (includeOffice && opts.returnToOffice) pts.push(office("Office (return)"));
+  pts.push(home("Home (return)"));
+  return pts;
+}
+
+/** Human-readable summary of a routed trip's sequence, for the map header. */
+function routeSummary(trip) {
+  const pts = trip.routePoints;
+  if (!pts || pts.length < 2) return "";
+  const startOffice = pts.length > 2 && pts[1].kind === "office";
+  const endOffice = pts.length > 2 && pts[pts.length - 2].kind === "office";
+  let s = "🏠 home → ";
+  if (startOffice) s += "🏢 office → ";
+  s += "visits";
+  if (endOffice) s += " → 🏢 office";
+  s += " → 🏠 home";
+  return s;
 }
 
 /* ---- OSRM with caching + limited concurrency ---- */
@@ -428,6 +462,16 @@ async function calculateAll() {
 }
 
 $("#btnCalc").addEventListener("click", () => calculateAll());
+
+/* route-shape options — re-route automatically when toggled (if already routed) */
+$("#optReturnOffice").addEventListener("change", (e) => {
+  state.routeOpts.returnToOffice = e.target.checked;
+  if (state.routed) calculateAll();
+});
+$("#optOfficeMonday").addEventListener("change", (e) => {
+  state.routeOpts.officeMondayOnly = e.target.checked;
+  if (state.routed) calculateAll();
+});
 
 /* ==========================================================================
    3. RENDERING — tables
@@ -745,7 +789,7 @@ function drawTrip(key) {
   const fb = trip.legs.some((l) => l.fallback);
   $("#mapMeta").innerHTML =
     `<b>${trip.territoryId}</b> · ${trip.date} · ${trip.username} — ${trip.stops.length} visits ` +
-    `<span class="muted">(🏠 home → 🏢 office → visits → office → home)</span>, ` +
+    `<span class="muted">(${routeSummary(trip)})</span>, ` +
     `<b>${fmt(trip.totalKm)} km</b>${fb ? ' · <span style="color:#8a6300">dashed = straight-line fallback</span>' : ""}`;
 }
 
