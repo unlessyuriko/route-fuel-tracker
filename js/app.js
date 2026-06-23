@@ -141,6 +141,7 @@ function normTelKey(h) {
     user: "username", username: "username", name: "username", driver: "username",
     carno: "carNo", carnumber: "carNo", car: "carNo", vehicle: "carNo", vehicleno: "carNo", plate: "carNo", platenumber: "carNo",
     enginepower: "enginePower", engine: "enginePower", power: "enginePower", hp: "enginePower", horsepower: "enginePower",
+    vehicletype: "vehicleType", type: "vehicleType", vehicleclass: "vehicleType", class: "vehicleType", category: "vehicleType",
     fueleconomy: "economy", economy: "economy", kmpl: "economy", kml: "economy", efficiency: "economy", mileage: "economy",
     actualdistance: "actualKm", actualkm: "actualKm", telematicsdistance: "actualKm", distance: "actualKm", odometer: "actualKm", monthlydistance: "actualKm",
     actualfuel: "actualFuel", fuel: "actualFuel", fuelconsumed: "actualFuel", monthlyfuel: "actualFuel", fuelconsumption: "actualFuel",
@@ -179,6 +180,7 @@ function parseTelematics(data) {
     const num = (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
     meta[username] = {
       carNo: String(o.carNo ?? "").trim(),
+      vehicleType: String(o.vehicleType ?? "").trim(),
       enginePower: o.enginePower != null && String(o.enginePower).trim() !== "" ? String(o.enginePower).trim() : "",
       economy: num(o.economy),
       actualKm: num(o.actualKm),
@@ -209,14 +211,38 @@ function handleTelematicsFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+/**
+ * Standard fuel economy (km/L) by vehicle class — a coarse fallback used only
+ * when a user has no explicit `fuel_economy`. Engine power (hp) is NOT used:
+ * it's a poor predictor of economy (mass, body type, fuel type matter far more).
+ */
+const CLASS_ECONOMY = {
+  motorbike: 40, motorcycle: 40, bike: 40, scooter: 40,
+  sedan: 12, car: 12, saloon: 12,
+  hatchback: 14, hatch: 14,
+  suv: 9, crossover: 10,
+  pickup: 8, pickuptruck: 8,
+  van: 9, minivan: 10,
+  truck: 5, lorry: 5,
+  bus: 4,
+};
+function defaultEconomyForType(type) {
+  if (!type) return undefined;
+  const k = String(type).toLowerCase().replace(/[\s_\-]+/g, "");
+  return CLASS_ECONOMY[k];
+}
+
 function onTelematicsLoaded(meta, sourceName) {
   state.userMeta = meta;
   // push the actuals/economy into the fuel-check inputs
   Object.entries(meta).forEach(([u, m]) => {
     const f = (fuelInputs[u] ||= {});
     f.carNo = m.carNo;
-    f.enginePower = m.enginePower;
-    if (m.economy != null) f.economy = m.economy;
+    f.vehicleType = m.vehicleType;
+    f.enginePower = m.enginePower; // informational only
+    // economy: explicit value wins; otherwise fall back to the class standard
+    const econ = m.economy != null ? m.economy : defaultEconomyForType(m.vehicleType);
+    if (econ != null) f.economy = econ;
     if (m.actualKm != null) f.actualKm = m.actualKm;
     if (m.actualFuel != null) f.actualFuel = m.actualFuel;
   });
@@ -609,7 +635,7 @@ function renderFuelTable() {
   const users = [...new Set(state.rows.map((r) => r.username))].sort();
   const t = $("#fuelTable");
   let html = `<thead><tr>
-    <th>User</th><th>Car no.</th><th>Engine (hp)</th><th>Fuel econ (km/L)</th>
+    <th>User</th><th>Car no.</th><th>Vehicle</th><th>Engine (hp)</th><th>Fuel econ (km/L)</th>
     <th class="num">REP Dist (km)</th><th class="num">Telematics Dist (km)</th><th>Distance Δ</th>
     <th class="num">Fuel by REP</th><th class="num">Telematics fuel (L)</th><th class="num">Actual fuel (L)</th>
     <th>Fuel Δ</th><th>Status</th>
@@ -620,6 +646,7 @@ function renderFuelTable() {
     html += `<tr data-user="${encodeURIComponent(u)}">
       <td><strong>${u}</strong></td>
       <td><input class="text" data-k="carNo" value="${f.carNo ?? ""}" placeholder="ABC-123" /></td>
+      <td><input class="text" data-k="vehicleType" value="${f.vehicleType ?? ""}" placeholder="sedan" title="Sets a standard fuel economy when km/L is blank" /></td>
       <td><input data-k="enginePower" value="${f.enginePower ?? ""}" placeholder="hp" /></td>
       <td><input data-k="economy" value="${f.economy ?? ""}" placeholder="10" /></td>
       <td class="num calc cell-calcKm">${state.routed ? fmt(calcKm) : "—"}</td>
@@ -640,6 +667,18 @@ function renderFuelTable() {
     tr.querySelectorAll("input").forEach((inp) => {
       inp.addEventListener("input", () => {
         fuelInputs[u][inp.dataset.k] = inp.value;
+        // picking a vehicle class fills the standard economy if km/L is still blank
+        if (inp.dataset.k === "vehicleType") {
+          const cur = fuelInputs[u].economy;
+          if (cur == null || String(cur).trim() === "") {
+            const def = defaultEconomyForType(inp.value);
+            if (def != null) {
+              fuelInputs[u].economy = def;
+              const eInp = tr.querySelector('input[data-k="economy"]');
+              if (eInp) eInp.value = def;
+            }
+          }
+        }
         recomputeFuelRow(tr, u);
       });
     });
@@ -695,7 +734,7 @@ function badge(diff, pct, unit) {
 
 /* ---- export the fuel-check table (computed values) to Excel ---- */
 const FUEL_EXPORT_HEAD = [
-  "User", "Car no.", "Engine (hp)", "Fuel econ (km/L)",
+  "User", "Car no.", "Vehicle", "Engine (hp)", "Fuel econ (km/L)",
   "REP Dist (km)", "Telematics Dist (km)", "Distance Δ (km)", "Distance Δ (%)",
   "Fuel by REP (L)", "Telematics fuel (L)", "Actual fuel (L)", "Fuel Δ (L)", "Fuel Δ (%)",
   "Status",
@@ -726,7 +765,7 @@ function fuelExportRows() {
     }
 
     return [
-      u, f.carNo ?? "", f.enginePower ?? "", r2(econ),
+      u, f.carNo ?? "", f.vehicleType ?? "", f.enginePower ?? "", r2(econ),
       r2(repDist), r2(actualKm), r2(distDelta), r2(distDeltaPct),
       r2(calcFuel), r2(telFuel), r2(actualFuel), r2(fuelDelta), r2(fuelDeltaPct),
       status,
@@ -871,12 +910,14 @@ const SAMPLE_HEAD = ["visited_day", "outlet_id", "outlet_name", "location", "use
 
 // telematics / vehicle data: one row per user
 const TELEMATICS_HEAD = [
-  "user", "car_no", "engine_power", "fuel_economy",
+  "user", "car_no", "vehicle_type", "engine_power", "fuel_economy",
   "actual_distance", "actual_fuel", "home_location", "office_location",
 ];
 const TELEMATICS_SAMPLE = [
-  ["Aung", "YGN-1234", "110", "12", "540", "47", "[96.1200, 16.8000]", "[96.1450, 16.8100]"],
-  ["Su",   "MDY-5678", "95",  "11", "320", "31", "[96.0850, 21.9750]", "[96.0950, 21.9800]"],
+  // Aung: explicit fuel_economy (12) is used as-is
+  ["Aung", "YGN-1234", "sedan",  "110", "12", "540", "47", "[96.1200, 16.8000]", "[96.1450, 16.8100]"],
+  // Su: fuel_economy blank → standard for "pickup" (8 km/L) is applied
+  ["Su",   "MDY-5678", "pickup", "95",  "",   "320", "31", "[96.0850, 21.9750]", "[96.0950, 21.9800]"],
 ];
 
 function buildSampleSheet() {

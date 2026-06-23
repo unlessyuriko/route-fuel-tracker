@@ -58,12 +58,20 @@ visit plan implies — and did it burn the fuel that distance should consume?*
 |---|---|
 | `user` | `Aung` |
 | `car_no` | `YGN-1234` |
-| `engine_power` | `110` |
-| `fuel_economy` | `12` (km/L) |
+| `vehicle_type` | `sedan` (sets a standard economy when `fuel_economy` is blank) |
+| `engine_power` | `110` (informational only — **not** used to compute economy) |
+| `fuel_economy` | `12` (km/L; leave blank to use the class standard) |
 | `actual_distance` | `540` (telematics km this month) |
 | `actual_fuel` | `47` (litres this month) |
 | `home_location` | `[96.1200, 16.8000]` (lon, lat) |
 | `office_location` | `[96.1450, 16.8100]` (lon, lat) |
+
+**Fuel economy:** the explicit `fuel_economy` (km/L) is always the source of
+truth. If it's blank, a coarse standard is applied from `vehicle_type` —
+motorbike ≈ 40, hatchback ≈ 14, sedan ≈ 12, SUV/van ≈ 9, pickup ≈ 8, truck ≈ 5,
+bus ≈ 4 — shown in the Fuel Check table and still editable. Engine power is kept
+for vehicle records only; it is a poor predictor of fuel economy, so it is never
+used in the math.
 
 Header names are matched loosely (case/spacing/underscores ignored, plus common
 aliases). Use **⬇ Visits Template** and **⛽ Telematics Template** in the header

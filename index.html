@@ -58,8 +58,9 @@
       <div class="card">
         <h2>Import telematics &amp; vehicle data <span class="muted" style="font-weight:400">(needed for distance)</span></h2>
         <p class="muted">
-          One row per <code>user</code>. Columns: <code>car_no</code>, <code>engine_power</code>,
-          <code>fuel_economy</code> (km/L), <code>actual_distance</code>, <code>actual_fuel</code>,
+          One row per <code>user</code>. Columns: <code>car_no</code>, <code>vehicle_type</code>,
+          <code>engine_power</code>, <code>fuel_economy</code> (km/L — blank uses the class standard),
+          <code>actual_distance</code>, <code>actual_fuel</code>,
           <code>home_location</code> &amp; <code>office_location</code> (each <code>[96.06, 16.86]</code> = lon, lat).
           The daily route runs <strong>home → office → visits → office → home</strong>, so home &amp; office are required to compute a user's distance.
         </p>
