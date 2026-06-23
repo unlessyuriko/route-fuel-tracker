@@ -76,8 +76,11 @@ No build step. Either:
   # then open http://localhost:8080
   ```
 
-An internet connection is required for OSRM routing, OpenStreetMap tiles, and
-the CDN libraries (SheetJS, Leaflet).
+The SheetJS and Leaflet libraries are **bundled locally** in `vendor/`, so Excel
+import and the map UI work without internet (and on machines where CDNs are
+blocked). An internet connection is still needed for **OSRM routing** and
+**OpenStreetMap map tiles**; without it, distances fall back to straight-line
+estimates and the map background won't render.
 
 ## Notes
 
@@ -90,4 +93,5 @@ the CDN libraries (SheetJS, Leaflet).
 ## Tech
 
 Vanilla JS · [SheetJS](https://sheetjs.com/) · [Leaflet](https://leafletjs.com/)
-· [OSRM](http://project-osrm.org/) · OpenStreetMap. Heineken-green accented UI.
+(both vendored in `vendor/`) · [OSRM](http://project-osrm.org/) · OpenStreetMap.
+Heineken-green accented UI.
