@@ -566,9 +566,9 @@ function renderFuelTable() {
   const t = $("#fuelTable");
   let html = `<thead><tr>
     <th>User</th><th>Car no.</th><th>Engine (hp)</th><th>Fuel econ (km/L)</th>
-    <th class="num">Calc dist (km)</th><th class="num">Actual dist (km)</th>
-    <th class="num">Calc fuel (L)</th><th class="num">Actual fuel (L)</th>
-    <th>Distance Δ</th><th>Fuel Δ</th><th>Status</th>
+    <th class="num">REP Dist (km)</th><th class="num">Telematics Dist (km)</th><th>Distance Δ</th>
+    <th class="num">Fuel by REP</th><th class="num">Telematics fuel (L)</th><th class="num">Actual fuel (L)</th>
+    <th>Fuel Δ</th><th>Status</th>
     </tr></thead><tbody>`;
   users.forEach((u) => {
     const f = fuelInputs[u] || (fuelInputs[u] = { economy: 10 });
@@ -580,9 +580,10 @@ function renderFuelTable() {
       <td><input data-k="economy" value="${f.economy ?? ""}" placeholder="10" /></td>
       <td class="num calc cell-calcKm">${state.routed ? fmt(calcKm) : "—"}</td>
       <td class="num"><input data-k="actualKm" value="${f.actualKm ?? ""}" placeholder="km" /></td>
-      <td class="num calc cell-calcFuel">—</td>
-      <td class="num"><input data-k="actualFuel" value="${f.actualFuel ?? ""}" placeholder="L" /></td>
       <td class="cell-distDelta">—</td>
+      <td class="num calc cell-calcFuel">—</td>
+      <td class="num calc cell-telFuel">—</td>
+      <td class="num"><input data-k="actualFuel" value="${f.actualFuel ?? ""}" placeholder="L" /></td>
       <td class="cell-fuelDelta">—</td>
       <td class="cell-status">—</td>
     </tr>`;
@@ -610,9 +611,11 @@ function recomputeFuelRow(tr, u) {
   const actualFuel = parseFloat(f.actualFuel);
 
   const calcFuel = econ > 0 && state.routed ? calcKm / econ : null;
+  const telFuel = econ > 0 && !isNaN(actualKm) ? actualKm / econ : null;
 
   tr.querySelector(".cell-calcKm").textContent = state.routed ? fmt(calcKm) : "—";
   tr.querySelector(".cell-calcFuel").textContent = calcFuel == null ? "—" : fmt(calcFuel);
+  tr.querySelector(".cell-telFuel").textContent = telFuel == null ? "—" : fmt(telFuel);
 
   // distance delta (actual vs calc)
   const dDelta = tr.querySelector(".cell-distDelta");

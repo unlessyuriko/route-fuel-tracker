@@ -27,9 +27,11 @@ visit plan implies — and did it burn the fuel that distance should consume?*
 4. **Fuel check** — car number, engine power, fuel economy (km/L), telematics
    distance and monthly fuel are **pre-filled from the telematics upload** (and
    still editable). The app computes:
-   - **Calculated distance** = Σ OSRM daily distances
-   - **Calculated fuel** = calculated distance ÷ fuel economy
-   - Distance Δ and fuel Δ (actual vs. calculated, absolute + %)
+   - **REP Dist** = Σ OSRM daily distances (the route the rep should have driven)
+   - **Telematics Dist** = actual distance from telematics
+   - **Fuel by REP** = REP Dist ÷ fuel economy
+   - **Telematics fuel** = Telematics Dist ÷ fuel economy
+   - Distance Δ (telematics vs. REP) and Fuel Δ (actual fuel vs. Fuel by REP), absolute + %
    - A status flag: **On plan** (≤15%), **Review** (≤35%), **Anomaly** (>35%)
 
 ## Expected columns
