@@ -693,6 +693,59 @@ function badge(diff, pct, unit) {
   return `<span class="badge ${cls}">${sign}${fmt(Math.abs(diff))} ${unit} (${sign}${fmt(Math.abs(pct), 0)}%)</span>`;
 }
 
+/* ---- export the fuel-check table (computed values) to Excel ---- */
+const FUEL_EXPORT_HEAD = [
+  "User", "Car no.", "Engine (hp)", "Fuel econ (km/L)",
+  "REP Dist (km)", "Telematics Dist (km)", "Distance Δ (km)", "Distance Δ (%)",
+  "Fuel by REP (L)", "Telematics fuel (L)", "Actual fuel (L)", "Fuel Δ (L)", "Fuel Δ (%)",
+  "Status",
+];
+
+function fuelExportRows() {
+  const r2 = (n) => (n == null || isNaN(n) ? "" : Math.round(n * 100) / 100);
+  const users = [...new Set(state.rows.map((r) => r.username))].sort();
+  return users.map((u) => {
+    const f = fuelInputs[u] || {};
+    const calcKm = userCalcKm(u);
+    const econ = parseFloat(f.economy);
+    const actualKm = parseFloat(f.actualKm);
+    const actualFuel = parseFloat(f.actualFuel);
+    const calcFuel = econ > 0 && state.routed ? calcKm / econ : null;
+    const telFuel = econ > 0 && !isNaN(actualKm) ? actualKm / econ : null;
+
+    const repDist = state.routed ? calcKm : null;
+    const distDelta = state.routed && !isNaN(actualKm) && calcKm > 0 ? actualKm - calcKm : null;
+    const distDeltaPct = distDelta == null ? null : (distDelta / calcKm) * 100;
+    const fuelDelta = calcFuel != null && !isNaN(actualFuel) && calcFuel > 0 ? actualFuel - calcFuel : null;
+    const fuelDeltaPct = fuelDelta == null ? null : (fuelDelta / calcFuel) * 100;
+
+    let status = "";
+    if (state.routed && !isNaN(actualKm) && calcKm > 0) {
+      const pct = Math.abs((actualKm - calcKm) / calcKm) * 100;
+      status = pct <= 15 ? "On plan" : pct <= 35 ? "Review" : "Anomaly";
+    }
+
+    return [
+      u, f.carNo ?? "", f.enginePower ?? "", r2(econ),
+      r2(repDist), r2(actualKm), r2(distDelta), r2(distDeltaPct),
+      r2(calcFuel), r2(telFuel), r2(actualFuel), r2(fuelDelta), r2(fuelDeltaPct),
+      status,
+    ];
+  });
+}
+
+function exportFuelCheck() {
+  const rows = fuelExportRows();
+  if (!rows.length) { toast("Nothing to export — import data first.", "warn"); return; }
+  const ws = XLSX.utils.aoa_to_sheet([FUEL_EXPORT_HEAD, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "fuel-check");
+  XLSX.writeFile(wb, `fuel-check-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast(`Exported ${rows.length} user(s).`, "ok");
+}
+
+$("#btnExportFuel").addEventListener("click", exportFuelCheck);
+
 /* ==========================================================================
    5. MAP
    ========================================================================== */

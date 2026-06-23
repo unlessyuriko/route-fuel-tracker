@@ -37,6 +37,8 @@ visit plan implies — and did it burn the fuel that distance should consume?*
    - **Telematics fuel** = Telematics Dist ÷ fuel economy
    - Distance Δ (telematics vs. REP) and Fuel Δ (actual fuel vs. Fuel by REP), absolute + %
    - A status flag: **On plan** (≤15%), **Review** (≤35%), **Anomaly** (>35%)
+   - **⬇ Export Excel** saves the whole computed table (all columns, deltas split
+     into absolute + %, and status) to `fuel-check-YYYY-MM-DD.xlsx`.
 
 ## Expected columns
 
